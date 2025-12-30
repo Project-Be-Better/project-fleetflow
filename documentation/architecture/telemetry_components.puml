@@ -1,0 +1,42 @@
+@startuml
+!theme mars
+
+package "FleetFlow Cluster" {
+
+    ' The Java Side
+    component "Spring Boot Core" as java_service {
+        port "HTTP /api/telemetry" as ingester
+        database "JPA Repository" as repo
+    }
+
+    ' The Python Side
+    component "FastAPI ML Engine" as python_service {
+        component "RabbitMQ Consumer" as worker
+        component "NumPy Analyzer" as math
+    }
+
+    ' Middleware
+    queue "RabbitMQ" as queue {
+        label "queue: telemetry_analysis"
+    }
+
+    ' Database
+    database "PostgreSQL" as db {
+        folder "Schema: telemetry" {
+            [trip_logs]
+            [driver_scores]
+        }
+    }
+}
+
+' Data Flow
+[Car / Simulator] --> ingester : 1. POST JSON Blob
+java_service --> [trip_logs] : 2. Save Heavy JSON (Claim Check)
+java_service -r-> queue : 3. Publish Trip ID (Signal)
+
+queue -r-> worker : 4. Consume Trip ID
+worker --> [trip_logs] : 5. Fetch Heavy JSON
+worker --> math : 6. Calculate Score
+math --> [driver_scores] : 7. Insert Result
+
+@enduml

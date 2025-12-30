@@ -1,0 +1,57 @@
+@startuml
+!theme mars
+skinparam linetype ortho
+
+package "PostgreSQL - Database: fleet_db" {
+    
+    namespace telemetry_schema {
+        
+        enum TripStatus {
+            PENDING_ANALYSIS
+            PROCESSING
+            COMPLETED
+            FAILED
+        }
+
+        entity "trip_logs" as trips {
+            * id : UUID <<PK>>
+            --
+            * vehicle_id : UUID <<FK placeholder>>
+            * driver_id : UUID <<FK placeholder>>
+            * start_time : TIMESTAMP
+            * end_time : TIMESTAMP
+            
+            * telemetry_blob : JSONB 
+            note: Heavy 16kHz sensor data\nstored as JSON array
+            
+            * status : VARCHAR(50) <<TripStatus>>
+            * created_at : TIMESTAMP
+            --
+            INDEX(vehicle_id)
+            INDEX(status)
+        }
+
+        entity "driver_scores" as scores {
+            * id : UUID <<PK>>
+            --
+            * trip_id : UUID <<FK, UK>>
+            * vehicle_id : UUID 
+            * driver_id : UUID 
+            
+            * safety_score : INTEGER
+            note: 0 to 100
+            
+            * harsh_braking_count : INTEGER
+            * rapid_accel_count : INTEGER
+            * speeding_count : INTEGER
+            
+            * processed_at : TIMESTAMP
+            --
+            INDEX(driver_id)
+        }
+
+        ' Relationship
+        trips ||..|| scores : "generates 0..1"
+    }
+}
+@enduml
