@@ -34,8 +34,7 @@ async def init_db():
 def init_rabbitmq():
     """Initialize RabbitMQ connection and declare queue"""
     global rabbitmq_connection, rabbitmq_channel
-    credentials = pika.PlainCredentials("guest", "guest")
-    parameters = pika.ConnectionParameters(host="localhost", credentials=credentials)
+    parameters = pika.URLParameters(RABBITMQ_URL)
     rabbitmq_connection = pika.BlockingConnection(parameters)
     rabbitmq_channel = rabbitmq_connection.channel()
     rabbitmq_channel.queue_declare(queue=QUEUE_NAME, durable=True)
@@ -58,22 +57,25 @@ async def publish_to_queue(trip_id: str):
 async def save_trip_log(payload: TripPayload) -> UUID:
     """Save trip log to database and return trip_id"""
     async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
-        result = await conn.execute(
-            sql.SQL(
+        async with conn.cursor() as cur:
+            await cur.execute(
                 "INSERT INTO telemetry.trip_logs (vehicle_id, driver_id, timestamp, telemetry_blob, status) "
-                "VALUES (%s, %s, %s, %s, %s) RETURNING id"
-            ),
-            [
-                str(payload.vehicle_id),
-                str(payload.driver_id),
-                payload.timestamp,
-                json.dumps({"data": [p.model_dump() for p in payload.data]}),
-                "PENDING",
-            ],
-        )
-        trip_id = (await result.fetchone())[0]
-        await conn.commit()
-    return UUID(trip_id)
+                "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                (
+                    payload.vehicle_id,
+                    payload.driver_id,
+                    payload.timestamp,
+                    json.dumps({"data": [p.model_dump() for p in payload.data]}),
+                    "PENDING",
+                ),
+            )
+            row = await cur.fetchone()
+            trip_id = row[0]
+            await conn.commit()
+
+    if isinstance(trip_id, str):
+        return UUID(trip_id)
+    return trip_id
 
 
 @asynccontextmanager
@@ -135,14 +137,13 @@ async def get_trip_score(trip_id: str):
     """Retrieve driver score for a specific trip"""
     try:
         async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
-            result = await conn.execute(
-                sql.SQL(
+            async with conn.cursor() as cur:
+                await cur.execute(
                     "SELECT trip_id, safety_score, harsh_braking_count, rapid_accel_count, created_at "
-                    "FROM telemetry.driver_scores WHERE trip_id = %s"
-                ),
-                [trip_id],
-            )
-            row = await result.fetchone()
+                    "FROM telemetry.driver_scores WHERE trip_id = %s",
+                    (trip_id,),
+                )
+                row = await cur.fetchone()
 
         if not row:
             raise HTTPException(
@@ -155,16 +156,12 @@ async def get_trip_score(trip_id: str):
             "safety_score": row[1],
             "harsh_braking_count": row[2],
             "rapid_accel_count": row[3],
-            "created_at": row[4],
+            "created_at": (
+                row[4].isoformat() if hasattr(row[4], "isoformat") else row[4]
+            ),
         }
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error retrieving score: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)

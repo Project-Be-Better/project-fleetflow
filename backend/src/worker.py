@@ -28,10 +28,7 @@ class TelemetryWorker:
 
     def connect_rabbitmq(self):
         """Establish RabbitMQ connection"""
-        credentials = pika.PlainCredentials("guest", "guest")
-        parameters = pika.ConnectionParameters(
-            host="localhost", credentials=credentials
-        )
+        parameters = pika.URLParameters(RABBITMQ_URL)
         self.connection = pika.BlockingConnection(parameters)
         self.channel = self.connection.channel()
         self.channel.queue_declare(queue=QUEUE_NAME, durable=True)
@@ -57,20 +54,16 @@ class TelemetryWorker:
                 # Step 1: Update status to PROCESSING
                 with conn.cursor() as cur:
                     cur.execute(
-                        sql.SQL(
-                            "UPDATE telemetry.trip_logs SET status = %s WHERE id = %s"
-                        ),
-                        ["PROCESSING", trip_id],
+                        "UPDATE telemetry.trip_logs SET status = %s WHERE id = %s",
+                        ("PROCESSING", trip_id),
                     )
                     conn.commit()
 
                 # Step 2: Fetch telemetry blob
                 with conn.cursor() as cur:
                     cur.execute(
-                        sql.SQL(
-                            "SELECT telemetry_blob FROM telemetry.trip_logs WHERE id = %s"
-                        ),
-                        [trip_id],
+                        "SELECT telemetry_blob FROM telemetry.trip_logs WHERE id = %s",
+                        (trip_id,),
                     )
                     result = cur.fetchone()
                     if not result:
@@ -87,27 +80,23 @@ class TelemetryWorker:
                 # Step 4: Insert driver score
                 with conn.cursor() as cur:
                     cur.execute(
-                        sql.SQL(
-                            "INSERT INTO telemetry.driver_scores "
-                            "(trip_id, safety_score, harsh_braking_count, rapid_accel_count) "
-                            "VALUES (%s, %s, %s, %s)"
-                        ),
-                        [
+                        "INSERT INTO telemetry.driver_scores "
+                        "(trip_id, safety_score, harsh_braking_count, rapid_accel_count) "
+                        "VALUES (%s, %s, %s, %s)",
+                        (
                             trip_id,
                             metrics["safety_score"],
                             metrics["harsh_braking_count"],
                             metrics["rapid_accel_count"],
-                        ],
+                        ),
                     )
                     conn.commit()
 
                 # Step 5: Update trip status to COMPLETED
                 with conn.cursor() as cur:
                     cur.execute(
-                        sql.SQL(
-                            "UPDATE telemetry.trip_logs SET status = %s WHERE id = %s"
-                        ),
-                        ["COMPLETED", trip_id],
+                        "UPDATE telemetry.trip_logs SET status = %s WHERE id = %s",
+                        ("COMPLETED", trip_id),
                     )
                     conn.commit()
 

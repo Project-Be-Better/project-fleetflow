@@ -1,7 +1,7 @@
 version: "3.8"
 
 services:
-  # PostgreSQL Database (Infrastructure only)
+  # PostgreSQL Database
   postgres:
     image: postgres:15
     container_name: fleetflow-db
@@ -20,7 +20,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # RabbitMQ Message Broker (Infrastructure only)
+  # RabbitMQ Message Broker
   rabbitmq:
     image: rabbitmq:3.12-management
     container_name: fleetflow-mq
@@ -28,8 +28,8 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     ports:
-      - "5672:5672" # AMQP port
-      - "15672:15672" # Management UI (http://localhost:15672)
+      - "5672:5672"
+      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -38,8 +38,41 @@ services:
       timeout: 5s
       retries: 5
 
-  # NOTE: FastAPI (api) and Worker services run locally for instant reload & debugging
-  # See DEVELOPMENT.md for local run instructions
+  # FastAPI Ingestion API
+  api:
+    build: ./backend
+    container_name: fleetflow-api
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/fleetflow
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - PYTHONPATH=/app/src
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/src:/app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Background Worker
+  worker:
+    build: ./backend
+    container_name: fleetflow-worker
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/fleetflow
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - PYTHONPATH=/app/src
+    volumes:
+      - ./backend/src:/app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: python src/worker.py
 
 volumes:
   postgres_data:
