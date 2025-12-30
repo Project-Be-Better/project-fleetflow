@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database (Infrastructure only)
+  postgres:
+    image: postgres:15
+    container_name: fleetflow-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: fleetflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ Message Broker (Infrastructure only)
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: fleetflow-mq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672" # AMQP port
+      - "15672:15672" # Management UI (http://localhost:15672)
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NOTE: FastAPI (api) and Worker services run locally for instant reload & debugging
+  # See DEVELOPMENT.md for local run instructions
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
