@@ -1,5 +1,7 @@
 # FleetFlow - Telematics & Driver Scoring Engine
 
+> 📁 **Documentation Note:** All guides (DEVELOPMENT.md, SETUP_VALIDATION.md, etc.) have been organized into the [`documentation/`](documentation/) folder. See [documentation/INDEX.md](documentation/INDEX.md) for complete navigation.
+
 A high-throughput, event-driven pipeline for ingesting vehicle telemetry data and generating automated driver safety scores using a **Hybrid Development Approach**.
 
 ## 🎯 Overview
@@ -56,15 +58,17 @@ python test_handshake.py
 
 ## 📚 Documentation
 
-| Document                                         | Purpose                                                            |
-| ------------------------------------------------ | ------------------------------------------------------------------ |
-| [DEVELOPMENT.md](DEVELOPMENT.md)                 | **Read this first!** Complete local dev guide with troubleshooting |
-| [HANDSHAKE.md](HANDSHAKE.md)                     | Architecture details and API specification                         |
-| [architecture.md](documentation/architecture.md) | High-level system design and data flow                             |
+**All documentation is organized in the [documentation/](documentation/) folder.**
 
----
+**→ Start with [documentation/INDEX.md](documentation/INDEX.md) for the complete guide**
 
-## 🏗️ Architecture at a Glance
+Quick links:
+
+- 🚀 [START_HERE.md](documentation/START_HERE.md) - 5-minute quick start
+- ⚡ [QUICK_REFERENCE.md](documentation/QUICK_REFERENCE.md) - Daily commands & URLs
+- 📖 [DEVELOPMENT.md](documentation/DEVELOPMENT.md) - Complete setup & troubleshooting
+- 🏗️ [HANDSHAKE.md](documentation/HANDSHAKE.md) - API & architecture
+- ✅ [SETUP_VALIDATION.md](documentation/SETUP_VALIDATION.md) - Verification checklist
 
 ```
 Vehicle Telemetry
@@ -226,21 +230,22 @@ project-fleetflow/
 
 ## 🐛 Troubleshooting
 
-**See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed troubleshooting guide**
+**See [documentation/DEVELOPMENT.md](documentation/DEVELOPMENT.md) for detailed troubleshooting guide**
 
 Common issues:
 
 - Database connection refused → Run `docker-compose up -d`
-- Port already in use → See DEVELOPMENT.md cleanup section
+- Port already in use → See documentation/DEVELOPMENT.md cleanup section
 - Module not found → Activate venv and reinstall: `pip install -r requirements.txt`
 
 ---
 
 ## 📝 Next Steps
 
-- [ ] Read [DEVELOPMENT.md](DEVELOPMENT.md) for complete setup
+- [ ] Read [documentation/START_HERE.md](documentation/START_HERE.md) for quick orientation
+- [ ] Read [documentation/DEVELOPMENT.md](documentation/DEVELOPMENT.md) for complete setup
 - [ ] Run `python test_handshake.py` to verify end-to-end
-- [ ] Explore [HANDSHAKE.md](HANDSHAKE.md) for architecture details
+- [ ] Explore [documentation/HANDSHAKE.md](documentation/HANDSHAKE.md) for architecture details
 - [ ] Check Swagger UI at http://localhost:8000/docs
 - [ ] Build additional features on this vertical slice
 
