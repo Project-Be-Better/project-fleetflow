@@ -1,10 +1,10 @@
 @startuml
 title Trip Processing State Machine
 
-[*] --> Queued : Trip Created
+[*] --> PENDING_ANALYSIS : Trip Created
 
-state Queued {
-    [*] -> Queued
+state PENDING_ANALYSIS {
+    [*] -> PENDING_ANALYSIS
     note on link
         A new trip is logged and
         a message is sent to the
@@ -12,40 +12,40 @@ state Queued {
     end note
 }
 
-Queued --> Processing : process_message
+PENDING_ANALYSIS --> PROCESSING : process_message
 note on link
     The worker consumes the
     message from the queue.
 end note
 
-state Processing {
-    Processing --> Completed : analysis_success
+state PROCESSING {
+    PROCESSING --> COMPLETED : analysis_success
     note on link
         The safety score is calculated
         and saved without errors.
     end note
 
-    Processing --> Failed : analysis_error
+    PROCESSING --> FAILED : analysis_error
     note on link
         An exception occurred during
         database access or analytics.
     end note
 }
 
-Failed --> Processing : retry_message
+FAILED --> PROCESSING : retry_message
 note on link
     The message is redelivered
     by RabbitMQ to be tried again.
 end note
 
-Failed --> [*] : retry_limit_exceeded
+FAILED --> [*] : retry_limit_exceeded
 note on link
     The message is moved to a
     dead-letter queue after
     'n' failed attempts.
 end note
 
-Completed --> [*]
+COMPLETED --> [*]
 note on link
     The trip is fully processed
     and has reached a terminal state.

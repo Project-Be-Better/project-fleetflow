@@ -3,43 +3,44 @@
 autonumber
 
 actor "Simulator / Car" as car
-participant "Spring Boot\n(Ingestion Service)" as java
+participant "FastAPI\n(Ingestion Service)" as api
 database "PostgreSQL\n(trip_logs)" as db_raw
 queue "RabbitMQ" as mq
-participant "FastAPI\n(ML Worker)" as python
+participant "Python Worker\n(Analysis Engine)" as worker
 database "PostgreSQL\n(driver_scores)" as db_score
 
 == Phase 1: Ingestion (Fast) ==
-car -> java: POST /api/telemetry\n{JSON Payload 5MB}
-activate java
+car -> api: POST /api/v1/telemetry\n{JSON Payload}
+activate api
 
-java -> db_raw: INSERT INTO trip_logs (id, blob, status='PENDING')
+api -> db_raw: INSERT INTO trip_logs (status='PENDING_ANALYSIS')
 activate db_raw
-db_raw --> java: Success
+db_raw --> api: Success
 deactivate db_raw
 
-java -> mq: Publish Message\n{trip_id: "uuid-123"}
-java --> car: 202 Accepted\n{"trip_id": "uuid-123"}
-deactivate java
+api -> mq: Publish Message\n{trip_id: "uuid"}
+api --> car: 202 Accepted\n{"trip_id": "uuid"}
+deactivate api
 note right: Client is released here.\nDoes not wait for ML.
 
 == Phase 2: Processing (Async) ==
-mq -> python: Consume Message\n{trip_id: "uuid-123"}
-activate python
+mq -> worker: Consume Message\n{trip_id: "uuid"}
+activate worker
 
-python -> db_raw: SELECT blob FROM trip_logs WHERE id...
+worker -> db_raw: UPDATE status='PROCESSING'
+worker -> db_raw: SELECT blob FROM trip_logs
 activate db_raw
-db_raw --> python: Returns {JSON Payload}
+db_raw --> worker: Returns {JSON Payload}
 deactivate db_raw
 
-python -> python: NumPy Analysis\n(Vector Calculations)
+worker -> worker: NumPy Analysis\n(Vector Calculations)
 
-python -> db_score: INSERT INTO driver_scores (score, metrics...)
+worker -> db_score: INSERT INTO driver_scores
 activate db_score
-db_score --> python: Success
+db_score --> worker: Success
 deactivate db_score
 
-python -> db_raw: UPDATE trip_logs SET status='COMPLETED'
-deactivate python
+worker -> db_raw: UPDATE status='COMPLETED'
+deactivate worker
 
 @enduml

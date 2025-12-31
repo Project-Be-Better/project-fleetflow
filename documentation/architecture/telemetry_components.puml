@@ -3,16 +3,17 @@
 
 package "FleetFlow Cluster" {
 
-    ' The Java Side
-    component "Spring Boot Core" as java_service {
-        port "HTTP /api/telemetry" as ingester
-        database "JPA Repository" as repo
+    ' The Ingestion Side
+    component "FastAPI Ingester" as api_service {
+        port "HTTP /api/v1/telemetry" as ingester
+        database "SQLAlchemy" as api_orm
     }
 
-    ' The Python Side
-    component "FastAPI ML Engine" as python_service {
+    ' The Analysis Side
+    component "Python Worker" as worker_service {
         component "RabbitMQ Consumer" as worker
         component "NumPy Analyzer" as math
+        database "SQLAlchemy" as worker_orm
     }
 
     ' Middleware
@@ -31,8 +32,8 @@ package "FleetFlow Cluster" {
 
 ' Data Flow
 [Car / Simulator] --> ingester : 1. POST JSON Blob
-java_service --> [trip_logs] : 2. Save Heavy JSON (Claim Check)
-java_service -r-> queue : 3. Publish Trip ID (Signal)
+api_service --> [trip_logs] : 2. Save Heavy JSON (Claim Check)
+api_service -r-> queue : 3. Publish Trip ID (Signal)
 
 queue -r-> worker : 4. Consume Trip ID
 worker --> [trip_logs] : 5. Fetch Heavy JSON

@@ -1,5 +1,7 @@
 import os
 import json
+import random
+import numpy as np
 from contextlib import asynccontextmanager
 from uuid import UUID
 
@@ -14,8 +16,12 @@ from sqlalchemy.orm import sessionmaker
 
 # Configuration
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:password@localhost:5432/fleetflow"
+    "DATABASE_URL", "postgresql+psycopg://postgres:password@localhost:5432/fleetflow"
 )
+# SQLAlchemy needs the driver name explicitly if not using the default psycopg2
+if "postgresql://" in DATABASE_URL and "+psycopg" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
+
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 QUEUE_NAME = "telemetry_analysis"
 
@@ -64,7 +70,9 @@ def publish_to_queue(trip_id: str):
             exchange="",
             routing_key=QUEUE_NAME,
             body=trip_id,
-            properties=pika.BasicProperties(delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE),
+            properties=pika.BasicProperties(
+                delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE
+            ),
         )
         print(f"📥 Published trip_id {trip_id} to queue '{QUEUE_NAME}'.")
     else:
@@ -96,17 +104,44 @@ app = FastAPI(
 @app.post("/api/v1/telemetry", response_model=TripIngestResponse, status_code=202)
 async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
     """
-    Accepts telemetry data, stores it, and queues it for processing.
+    If payload.data is empty, generates 5,000 synthetic points for testing.
     """
     try:
+        telemetry_data = [p.model_dump() for p in payload.data]
+
+        # Synthetic Data Generation for Testing
+        if not telemetry_data:
+            print(
+                "🧪 Empty payload detected. Generating 5,000 synthetic points using NumPy..."
+            )
+            n_points = 5000
+
+            # Vectorized generation
+            accels = np.random.uniform(-0.5, 0.5, n_points)
+            lat_forces = np.random.uniform(-0.1, 0.1, n_points)
+
+            # Calculate speeds: speed = max(0, cumsum(accel * gravity_to_kmh))
+            # Assuming 1Hz sampling (1 second between points)
+            speeds = np.maximum(0, np.cumsum(accels * 9.81 * 3.6))
+
+            # Convert to list of dicts for JSON serialization
+            telemetry_data = [
+                {
+                    "speed_kmh": float(round(s, 2)),
+                    "g_force_long": float(round(a, 3)),
+                    "g_force_lat": float(round(l, 3)),
+                }
+                for s, a, l in zip(speeds, accels, lat_forces)
+            ]
+
         # Step 1: Create and persist the TripDataRaw entity
         trip = TripDataRaw(
             vehicle_id=payload.vehicle_id,
             driver_id=payload.driver_id,
-            start_time=payload.timestamp, # Assuming timestamp is start_time
-            end_time=payload.timestamp, # Placeholder, could be updated later
-            raw_telemetry_blob={"data": [p.model_dump() for p in payload.data]},
-            status=TripStatus.PENDING_ANALYSIS,  # Initial state
+            start_time=payload.timestamp,
+            end_time=payload.timestamp,
+            raw_telemetry_blob={"data": telemetry_data},
+            status=TripStatus.PENDING_ANALYSIS,
         )
         db.add(trip)
         db.commit()
@@ -134,10 +169,15 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+
 @app.get("/api/v1/trip/{trip_id}/status")
 async def get_trip_status(trip_id: UUID, db: Session = Depends(get_db)):
     """Retrieve the current processing status of a trip."""
     trip = db.query(TripDataRaw).filter(TripDataRaw.id == trip_id).one_or_none()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found.")
-    return {"trip_id": trip.id, "status": trip.status.value, "last_updated": trip.created_at}
+    return {
+        "trip_id": trip.id,
+        "status": trip.status.value,
+        "last_updated": trip.created_at,
+    }

@@ -12,8 +12,11 @@ from models import TripDataRaw, TripStatus, DriverScoreDB
 
 # Configuration
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:password@localhost:5432/fleetflow"
+    "DATABASE_URL", "postgresql+psycopg://postgres:password@localhost:5432/fleetflow"
 )
+if "postgresql://" in DATABASE_URL and "+psycopg" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
+
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 QUEUE_NAME = "telemetry_analysis"
 
