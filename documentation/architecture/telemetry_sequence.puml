@@ -4,7 +4,7 @@ autonumber
 
 actor "Simulator / Car" as car
 participant "FastAPI\n(Ingestion Service)" as api
-database "PostgreSQL\n(trip_logs)" as db_raw
+database "PostgreSQL\n(trip_data_raw)" as db_raw
 queue "RabbitMQ" as mq
 participant "Python Worker\n(Analysis Engine)" as worker
 database "PostgreSQL\n(driver_scores)" as db_score
@@ -13,7 +13,7 @@ database "PostgreSQL\n(driver_scores)" as db_score
 car -> api: POST /api/v1/telemetry\n{JSON Payload}
 activate api
 
-api -> db_raw: INSERT INTO trip_logs (status='PENDING_ANALYSIS')
+api -> db_raw: INSERT INTO trip_data_raw (status='PENDING_ANALYSIS')
 activate db_raw
 db_raw --> api: Success
 deactivate db_raw
@@ -28,7 +28,7 @@ mq -> worker: Consume Message\n{trip_id: "uuid"}
 activate worker
 
 worker -> db_raw: UPDATE status='PROCESSING'
-worker -> db_raw: SELECT blob FROM trip_logs
+worker -> db_raw: SELECT blob FROM trip_data_raw
 activate db_raw
 db_raw --> worker: Returns {JSON Payload}
 deactivate db_raw

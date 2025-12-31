@@ -24,7 +24,7 @@ package "FleetFlow Cluster" {
     ' Database
     database "PostgreSQL" as db {
         folder "Schema: telemetry" {
-            [trip_logs]
+            [trip_data_raw]
             [driver_scores]
         }
     }
@@ -32,11 +32,11 @@ package "FleetFlow Cluster" {
 
 ' Data Flow
 [Car / Simulator] --> ingester : 1. POST JSON Blob
-api_service --> [trip_logs] : 2. Save Heavy JSON (Claim Check)
+api_service --> [trip_data_raw] : 2. Save Heavy JSON (Claim Check)
 api_service -r-> queue : 3. Publish Trip ID (Signal)
 
 queue -r-> worker : 4. Consume Trip ID
-worker --> [trip_logs] : 5. Fetch Heavy JSON
+worker --> [trip_data_raw] : 5. Fetch Heavy JSON
 worker --> math : 6. Calculate Score
 math --> [driver_scores] : 7. Insert Result
 

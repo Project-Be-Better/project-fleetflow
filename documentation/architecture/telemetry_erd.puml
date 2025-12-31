@@ -13,17 +13,18 @@ package "PostgreSQL - Database: fleet_db" {
             FAILED
         }
 
-        entity "trip_logs" as trips {
+        entity "trip_data_raw" as trips {
             * id : UUID <<PK>>
             --
             * vehicle_id : UUID
             * driver_id : UUID
-            * timestamp : TIMESTAMP
+            * start_time : TIMESTAMP
+            * end_time : TIMESTAMP
             
-            * telemetry_blob : JSON 
+            * raw_telemetry_blob : JSONB 
             note: Heavy sensor data\nstored as JSON array
             
-            * status : VARCHAR(50) <<TripStatus>>
+            * status : TripStatus
             * created_at : TIMESTAMP
             --
             INDEX(vehicle_id)
@@ -34,6 +35,8 @@ package "PostgreSQL - Database: fleet_db" {
             * id : UUID <<PK>>
             --
             * trip_id : UUID <<FK, UK>>
+            * vehicle_id : UUID
+            * driver_id : UUID
             
             * safety_score : INTEGER
             note: 0 to 100
@@ -44,6 +47,7 @@ package "PostgreSQL - Database: fleet_db" {
             * created_at : TIMESTAMP
             --
             INDEX(trip_id)
+            INDEX(driver_id)
         }
 
         ' Relationship

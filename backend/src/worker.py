@@ -86,6 +86,8 @@ class TelemetryWorker:
             # Save the score to the 'driver_scores' table
             score_entry = DriverScoreDB(
                 trip_id=trip.id,
+                vehicle_id=trip.vehicle_id,
+                driver_id=trip.driver_id,
                 safety_score=metrics["safety_score"],
                 harsh_braking_count=metrics["harsh_braking_count"],
                 rapid_accel_count=metrics["rapid_accel_count"],

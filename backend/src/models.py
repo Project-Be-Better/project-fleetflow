@@ -72,6 +72,8 @@ class DriverScoreDB(Base):
         unique=True,
         nullable=False,
     )
+    vehicle_id = Column(PG_UUID(as_uuid=True), nullable=False)
+    driver_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
     safety_score = Column(Integer, nullable=False)
     harsh_braking_count = Column(Integer, default=0)
     rapid_accel_count = Column(Integer, default=0)

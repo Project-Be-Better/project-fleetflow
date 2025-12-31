@@ -38,10 +38,13 @@ CREATE INDEX IF NOT EXISTS idx_trip_data_raw_status ON telemetry.trip_data_raw(s
 CREATE TABLE IF NOT EXISTS telemetry.driver_scores (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     trip_id UUID NOT NULL UNIQUE REFERENCES telemetry.trip_data_raw(id) ON DELETE CASCADE,
+    vehicle_id UUID NOT NULL,
+    driver_id UUID NOT NULL,
     safety_score INT CHECK (safety_score >= 0 AND safety_score <= 100),
     harsh_braking_count INT DEFAULT 0,
     rapid_accel_count INT DEFAULT 0,
     created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_driver_scores_driver_id ON telemetry.driver_scores(driver_id);
 CREATE INDEX IF NOT EXISTS idx_driver_scores_trip_id ON telemetry.driver_scores(trip_id);
