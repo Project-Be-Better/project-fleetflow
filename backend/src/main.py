@@ -117,24 +117,39 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
             )
             n_points = 5000
 
+            # --- NEW: Driver Profiles for Score Variety ---
+            # 50% Safe, 30% Moderate, 20% Aggressive
+            profile = np.random.choice(
+                ["safe", "moderate", "aggressive"], p=[0.5, 0.3, 0.2]
+            )
+
+            if profile == "safe":
+                n_range = (0, 2)
+                speed_base = 30
+                accel_noise = 0.02
+            elif profile == "moderate":
+                n_range = (2, 6)
+                speed_base = 60
+                accel_noise = 0.04
+            else:  # aggressive
+                n_range = (8, 15)
+                speed_base = 85
+                accel_noise = 0.1
+
             # Use a normal distribution for realistic "smooth" driving
-            # Most values will be within [-0.2, 0.2]
-            accels = np.random.normal(0, 0.05, n_points)
+            accels = np.random.normal(0, accel_noise, n_points)
             lat_forces = np.random.normal(0, 0.02, n_points)
 
-            # Inject a few specific "harsh" events so the score isn't always 100
-            # Harsh braking (negative)
-            n_braking = np.random.randint(1, 16)
+            # Inject "harsh" events based on profile
+            n_braking = np.random.randint(*n_range)
             braking_indices = np.random.choice(n_points, n_braking, replace=False)
             accels[braking_indices] = np.random.uniform(-0.6, -0.45, n_braking)
 
-            # Rapid acceleration (positive)
-            n_accel = np.random.randint(1, 16)
+            n_accel = np.random.randint(*n_range)
             accel_indices = np.random.choice(n_points, n_accel, replace=False)
             accels[accel_indices] = np.random.uniform(0.45, 0.6, n_accel)
 
-            # Harsh cornering (lateral)
-            n_corner = np.random.randint(1, 16)
+            n_corner = np.random.randint(*n_range)
             corner_indices = np.random.choice(n_points, n_corner, replace=False)
             lat_forces[corner_indices] = np.random.choice(
                 [-0.4, 0.4], n_corner
@@ -142,9 +157,15 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
 
             # Calculate speeds: speed = max(0, cumsum(accel * gravity_to_kmh))
             # We'll add a base speed and some smoothing to make it look like a real trip
-            speeds = np.maximum(0, 40 + np.cumsum(accels * 9.81 * 3.6))
+            speeds = np.maximum(
+                0, speed_base + np.cumsum(accels * 9.81 * 3.6 * 0.1)
+            )  # Reduced multiplier for stability
             # Clip speed to realistic highway limits
             speeds = np.clip(speeds, 0, 120)
+
+            print(
+                f"  - Generated {profile} trip with {n_braking} braking, {n_accel} accel, {n_corner} cornering events."
+            )
 
             # --- NEW: Contextual Data Generation ---
             # 1. Timestamps (1 second intervals)
