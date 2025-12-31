@@ -116,13 +116,31 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
             )
             n_points = 5000
 
-            # Vectorized generation
-            accels = np.random.uniform(-0.5, 0.5, n_points)
-            lat_forces = np.random.uniform(-0.1, 0.1, n_points)
+            # Use a normal distribution for realistic "smooth" driving
+            # Most values will be within [-0.2, 0.2]
+            accels = np.random.normal(0, 0.05, n_points)
+            lat_forces = np.random.normal(0, 0.02, n_points)
+
+            # Inject a few specific "harsh" events so the score isn't always 100
+            # Harsh braking (negative)
+            braking_indices = np.random.choice(n_points, 5, replace=False)
+            accels[braking_indices] = np.random.uniform(-0.6, -0.45, 5)
+
+            # Rapid acceleration (positive)
+            accel_indices = np.random.choice(n_points, 3, replace=False)
+            accels[accel_indices] = np.random.uniform(0.45, 0.6, 3)
+
+            # Harsh cornering (lateral)
+            corner_indices = np.random.choice(n_points, 4, replace=False)
+            lat_forces[corner_indices] = np.random.choice(
+                [-0.4, 0.4], 4
+            ) * np.random.uniform(1.1, 1.3, 4)
 
             # Calculate speeds: speed = max(0, cumsum(accel * gravity_to_kmh))
-            # Assuming 1Hz sampling (1 second between points)
-            speeds = np.maximum(0, np.cumsum(accels * 9.81 * 3.6))
+            # We'll add a base speed and some smoothing to make it look like a real trip
+            speeds = np.maximum(0, 40 + np.cumsum(accels * 9.81 * 3.6))
+            # Clip speed to realistic highway limits
+            speeds = np.clip(speeds, 0, 120)
 
             # Convert to list of dicts for JSON serialization
             telemetry_data = [

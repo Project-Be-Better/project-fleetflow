@@ -77,6 +77,7 @@ class DriverScoreDB(Base):
     safety_score = Column(Integer, nullable=False)
     harsh_braking_count = Column(Integer, default=0)
     rapid_accel_count = Column(Integer, default=0)
+    harsh_cornering_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -116,4 +117,5 @@ class DriverScore(BaseModel):
     safety_score: int
     harsh_braking_count: int
     rapid_accel_count: int
+    harsh_cornering_count: int
     created_at: datetime
