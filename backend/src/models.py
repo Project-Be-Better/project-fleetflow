@@ -11,6 +11,8 @@ from sqlalchemy import (
     DateTime,
     JSON,
     Enum,
+    Integer,
+    ForeignKey,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -52,6 +54,27 @@ class TripDataRaw(Base):
         default=TripStatus.PENDING_ANALYSIS,
         index=True,
     )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class DriverScoreDB(Base):
+    """
+    SQLAlchemy ORM model for the 'driver_scores' table in the 'telemetry' schema.
+    """
+
+    __tablename__ = "driver_scores"
+    __table_args__ = {"schema": "telemetry"}
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    trip_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("telemetry.trip_logs.id"),
+        unique=True,
+        nullable=False,
+    )
+    safety_score = Column(Integer, nullable=False)
+    harsh_braking_count = Column(Integer, default=0)
+    rapid_accel_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 

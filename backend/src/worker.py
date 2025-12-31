@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from analytics import calculate_safety_score
-from models import TripDataRaw, TripStatus
+from models import TripDataRaw, TripStatus, DriverScoreDB
 
 # Configuration
 DATABASE_URL = os.getenv(
@@ -65,7 +65,9 @@ class TelemetryWorker:
             trip = db.query(TripDataRaw).filter(TripDataRaw.id == trip_id).one_or_none()
 
             if not trip:
-                print(f"❓ Trip {trip_id} not found in database. Acknowledging message.")
+                print(
+                    f"❓ Trip {trip_id} not found in database. Acknowledging message."
+                )
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
@@ -78,13 +80,21 @@ class TelemetryWorker:
             metrics = calculate_safety_score(trip.raw_telemetry_blob)
             print(f"  - 📊 Calculated metrics: {metrics}")
 
-            # NOTE: Here you would save the score to the 'driver_scores' table
-            # For now, we focus on the state machine of the trip itself.
+            # Save the score to the 'driver_scores' table
+            score_entry = DriverScoreDB(
+                trip_id=trip.id,
+                safety_score=metrics["safety_score"],
+                harsh_braking_count=metrics["harsh_braking_count"],
+                rapid_accel_count=metrics["rapid_accel_count"],
+            )
+            db.add(score_entry)
 
             # === STATE MACHINE: PROCESSING -> COMPLETED ===
             trip.status = TripStatus.COMPLETED
             db.commit()
-            print(f"✅ Successfully processed trip: {trip_id}. Status set to COMPLETED.")
+            print(
+                f"✅ Successfully processed trip: {trip_id}. Status set to COMPLETED."
+            )
 
         except Exception as e:
             print(f"❌ Error during processing of trip {trip_id}: {e}")
