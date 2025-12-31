@@ -34,10 +34,10 @@ CREATE TABLE IF NOT EXISTS telemetry.trip_data_raw (
 CREATE INDEX IF NOT EXISTS idx_trip_data_raw_vehicle_id ON telemetry.trip_data_raw(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_trip_data_raw_status ON telemetry.trip_data_raw(status);
 
--- The 'driver_scores' table remains unchanged but is included for completeness.
+-- The 'driver_scores' table stores the results of the analysis.
 CREATE TABLE IF NOT EXISTS telemetry.driver_scores (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    trip_id UUID NOT NULL UNIQUE,
+    trip_id UUID NOT NULL UNIQUE REFERENCES telemetry.trip_data_raw(id) ON DELETE CASCADE,
     safety_score INT CHECK (safety_score >= 0 AND safety_score <= 100),
     harsh_braking_count INT DEFAULT 0,
     rapid_accel_count INT DEFAULT 0,

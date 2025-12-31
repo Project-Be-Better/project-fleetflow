@@ -68,7 +68,7 @@ class DriverScoreDB(Base):
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     trip_id = Column(
         PG_UUID(as_uuid=True),
-        ForeignKey("telemetry.trip_logs.id"),
+        ForeignKey("telemetry.trip_data_raw.id"),
         unique=True,
         nullable=False,
     )

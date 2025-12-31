@@ -55,7 +55,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
 
   # Background Worker
   worker:
@@ -72,7 +72,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    command: python src/worker.py
+    command: python -u src/worker.py
 
 volumes:
   postgres_data:
