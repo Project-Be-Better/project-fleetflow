@@ -7,11 +7,15 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 import pika
 
 from models import TripPayload, TripIngestResponse, TripDataRaw, TripStatus, Base
+from state_manager import TripStateManager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -100,6 +104,33 @@ app = FastAPI(
     description="API for vehicle telemetry ingestion using the Claim Check pattern.",
     lifespan=lifespan,
 )
+
+# Enable CORS for the dashboard
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve Frontend
+# Try local path first, then container path
+frontend_path = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
+if not os.path.exists(frontend_path):
+    frontend_path = "/app/frontend"
+
+if os.path.exists(frontend_path):
+    app.mount(
+        "/dashboard", StaticFiles(directory=frontend_path, html=True), name="frontend"
+    )
+
+
+@app.get("/")
+async def root():
+    if os.path.exists(os.path.join(frontend_path, "index.html")):
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+    return {"message": "FleetFlow API is running. Dashboard not found."}
 
 
 @app.post("/api/v1/telemetry", response_model=TripIngestResponse, status_code=202)
@@ -223,18 +254,14 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
                 )
             ]
 
-        # Step 1: Create and persist the TripDataRaw entity
-        trip = TripDataRaw(
+        # Step 1: Create and persist the TripDataRaw entity using StateManager
+        state_mgr = TripStateManager(db)
+        trip = state_mgr.initialize_trip(
             vehicle_id=payload.vehicle_id,
             driver_id=payload.driver_id,
             start_time=payload.timestamp,
-            end_time=payload.timestamp,
-            raw_telemetry_blob={"data": telemetry_data},
-            status=TripStatus.PENDING_ANALYSIS,
+            raw_data={"data": telemetry_data},
         )
-        db.add(trip)
-        db.commit()
-        db.refresh(trip)
 
         # Step 2: Publish the new trip's ID to the queue for the worker to process.
         # Use run_in_threadpool to avoid blocking the event loop.
@@ -269,4 +296,35 @@ async def get_trip_status(trip_id: UUID, db: Session = Depends(get_db)):
         "trip_id": trip.id,
         "status": trip.status.value,
         "last_updated": trip.created_at,
+    }
+
+
+@app.get("/api/v1/trip/{trip_id}/results")
+async def get_trip_results(trip_id: UUID, db: Session = Depends(get_db)):
+    """Retrieve the analysis results for a completed trip."""
+    from models import DriverScoreDB
+
+    score = (
+        db.query(DriverScoreDB).filter(DriverScoreDB.trip_id == trip_id).one_or_none()
+    )
+    if not score:
+        # Check if trip exists but not yet completed
+        trip = db.query(TripDataRaw).filter(TripDataRaw.id == trip_id).one_or_none()
+        if not trip:
+            raise HTTPException(status_code=404, detail="Trip not found.")
+        return {
+            "trip_id": trip_id,
+            "status": trip.status.value,
+            "message": "Results not yet available.",
+        }
+
+    return {
+        "trip_id": score.trip_id,
+        "safety_score": score.safety_score,
+        "max_speed": score.max_speed,
+        "harsh_braking_count": score.harsh_braking_count,
+        "rapid_accel_count": score.rapid_accel_count,
+        "harsh_cornering_count": score.harsh_cornering_count,
+        "speeding_count": score.speeding_count,
+        "created_at": score.created_at,
     }

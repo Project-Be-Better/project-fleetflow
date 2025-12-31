@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from analytics import calculate_safety_score
 from models import TripDataRaw, TripStatus, DriverScoreDB
+from state_manager import TripStateManager
 
 # Configuration
 DATABASE_URL = os.getenv(
@@ -62,10 +63,11 @@ class TelemetryWorker:
             return
 
         db = self.SessionLocal()
+        state_mgr = TripStateManager(db)
         trip = None
         try:
             # Fetch the trip from the database
-            trip = db.query(TripDataRaw).filter(TripDataRaw.id == trip_id).one_or_none()
+            trip = state_mgr.get_trip(trip_id)
 
             if not trip:
                 print(
@@ -75,9 +77,7 @@ class TelemetryWorker:
                 return
 
             # === STATE MACHINE: PENDING_ANALYSIS -> PROCESSING ===
-            trip.status = TripStatus.PROCESSING
-            db.commit()
-            print(f"  - Trip {trip_id} status set to PROCESSING.")
+            state_mgr.transition_to(trip_id, TripStatus.PROCESSING)
 
             # Perform the core analysis on the raw data
             metrics = calculate_safety_score(trip.raw_telemetry_blob)
@@ -98,8 +98,7 @@ class TelemetryWorker:
             db.add(score_entry)
 
             # === STATE MACHINE: PROCESSING -> COMPLETED ===
-            trip.status = TripStatus.COMPLETED
-            db.commit()
+            state_mgr.transition_to(trip_id, TripStatus.COMPLETED)
             print(
                 f"✅ Successfully processed trip: {trip_id}. Status set to COMPLETED."
             )
@@ -109,8 +108,7 @@ class TelemetryWorker:
             if trip:
                 # === STATE MACHINE: (ANY) -> FAILED ===
                 db.rollback()
-                trip.status = TripStatus.FAILED
-                db.commit()
+                state_mgr.transition_to(trip_id, TripStatus.FAILED)
                 print(f"  - ❗ Trip {trip_id} status set to FAILED.")
         finally:
             if db:
