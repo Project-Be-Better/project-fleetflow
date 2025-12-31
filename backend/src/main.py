@@ -2,6 +2,7 @@ import os
 import json
 import random
 import numpy as np
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from uuid import UUID
 
@@ -145,14 +146,60 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
             # Clip speed to realistic highway limits
             speeds = np.clip(speeds, 0, 120)
 
+            # --- NEW: Contextual Data Generation ---
+            # 1. Timestamps (1 second intervals)
+            start_ts = payload.timestamp
+            # 30% chance to make it a night trip for testing
+            if np.random.random() < 0.3:
+                # Set to a random hour between 20:00 and 04:00
+                night_hour = np.random.choice([20, 21, 22, 23, 0, 1, 2, 3, 4])
+                start_ts = start_ts.replace(
+                    hour=night_hour, minute=np.random.randint(0, 60)
+                )
+
+            timestamps = [start_ts + timedelta(seconds=i) for i in range(n_points)]
+
+            # 2. GPS Coordinates (Singapore Bounding Box)
+            # Start at a random point in SG
+            base_lat, base_lon = 1.3521, 103.8198  # Central SG
+            lats = base_lat + np.cumsum(np.random.normal(0, 0.0001, n_points))
+            lons = base_lon + np.cumsum(np.random.normal(0, 0.0001, n_points))
+
+            # 3. Dynamic Weather (Transitions)
+            # Start with one condition, potentially transition halfway
+            weather_options = ["clear", "rainy", "cloudy"]
+            start_weather = np.random.choice(weather_options, p=[0.7, 0.2, 0.1])
+
+            # Create an array of weather conditions
+            weather_conditions = [start_weather] * n_points
+            if np.random.random() < 0.3:  # 30% chance of weather change during trip
+                change_point = np.random.randint(n_points // 4, 3 * n_points // 4)
+                new_weather = np.random.choice(
+                    [w for w in weather_options if w != start_weather]
+                )
+                for i in range(change_point, n_points):
+                    weather_conditions[i] = new_weather
+
             # Convert to list of dicts for JSON serialization
             telemetry_data = [
                 {
+                    "timestamp": ts.isoformat(),
+                    "latitude": float(round(lat, 6)),
+                    "longitude": float(round(lon, 6)),
                     "speed_kmh": float(round(s, 2)),
                     "g_force_long": float(round(a, 3)),
                     "g_force_lat": float(round(l, 3)),
+                    "weather": w,
                 }
-                for s, a, l in zip(speeds, accels, lat_forces)
+                for ts, lat, lon, s, a, l, w in zip(
+                    timestamps,
+                    lats,
+                    lons,
+                    speeds,
+                    accels,
+                    lat_forces,
+                    weather_conditions,
+                )
             ]
 
         # Step 1: Create and persist the TripDataRaw entity

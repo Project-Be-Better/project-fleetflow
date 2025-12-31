@@ -80,6 +80,7 @@ class DriverScoreDB(Base):
     harsh_braking_count = Column(Integer, default=0)
     rapid_accel_count = Column(Integer, default=0)
     harsh_cornering_count = Column(Integer, default=0)
+    speeding_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -91,9 +92,13 @@ class DriverScoreDB(Base):
 class TelemetryPoint(BaseModel):
     """Individual telemetry data point"""
 
+    timestamp: datetime
+    latitude: float
+    longitude: float
     speed_kmh: float
     g_force_long: float  # Longitudinal (0.4g = ~4 m/s²)
     g_force_lat: float  # Lateral
+    weather: str = "clear"
 
 
 class TripPayload(BaseModel):

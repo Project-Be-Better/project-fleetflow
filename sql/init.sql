@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS telemetry.driver_scores (
     harsh_braking_count INT DEFAULT 0,
     rapid_accel_count INT DEFAULT 0,
     harsh_cornering_count INT DEFAULT 0,
+    speeding_count INT DEFAULT 0,
     created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
 );
 

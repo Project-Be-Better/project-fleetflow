@@ -92,6 +92,7 @@ class TelemetryWorker:
                 harsh_braking_count=metrics["harsh_braking_count"],
                 rapid_accel_count=metrics["rapid_accel_count"],
                 harsh_cornering_count=metrics.get("harsh_cornering_count", 0),
+                speeding_count=metrics.get("speeding_count", 0),
                 max_speed=metrics["max_speed"],
             )
             db.add(score_entry)
