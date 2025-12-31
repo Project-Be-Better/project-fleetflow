@@ -1,7 +1,63 @@
+import enum
 from pydantic import BaseModel, Field
 from typing import List
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime
+
+from sqlalchemy import (
+    create_engine,
+    Column,
+    String,
+    DateTime,
+    JSON,
+    Enum,
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+
+# ============================================
+# DATABASE SETUP (SQLAlchemy ORM)
+# ============================================
+
+Base = declarative_base()
+
+
+class TripStatus(enum.Enum):
+    """Enumeration for the status of a trip analysis."""
+
+    PENDING_ANALYSIS = "PENDING_ANALYSIS"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class TripDataRaw(Base):
+    """
+    SQLAlchemy ORM model for the 'trip_data_raw' table in the 'telemetry' schema.
+    """
+
+    __tablename__ = "trip_data_raw"
+    __table_args__ = {"schema": "telemetry"}
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    vehicle_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    driver_id = Column(PG_UUID(as_uuid=True), nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    raw_telemetry_blob = Column(JSON, nullable=False)
+    status = Column(
+        Enum(TripStatus, name="trip_status_enum", schema="telemetry"),
+        nullable=False,
+        default=TripStatus.PENDING_ANALYSIS,
+        index=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ============================================
+# API MODELS (Pydantic)
+# ============================================
 
 
 class TelemetryPoint(BaseModel):

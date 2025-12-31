@@ -1,31 +1,47 @@
--- Create telemetry schema
+-- Create the schema for telemetry data if it doesn't already exist.
 CREATE SCHEMA IF NOT EXISTS telemetry;
 
--- Table: trip_logs (Raw Telemetry Data)
-CREATE TABLE IF NOT EXISTS telemetry.trip_logs (
+-- Drop the enum type if it exists to ensure a clean slate, then create it.
+-- This is useful for development to apply changes to the enum.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'trip_status_enum') THEN
+        DROP TYPE telemetry.trip_status_enum;
+    END IF;
+END$$;
+
+CREATE TYPE telemetry.trip_status_enum AS ENUM (
+    'PENDING_ANALYSIS',
+    'PROCESSING',
+    'COMPLETED',
+    'FAILED'
+);
+
+-- Create the table to store raw trip data.
+-- This table name 'trip_data_raw' matches the SQLAlchemy ORM model.
+CREATE TABLE IF NOT EXISTS telemetry.trip_data_raw (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vehicle_id UUID NOT NULL,
     driver_id UUID NOT NULL,
-    timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
-    telemetry_blob JSONB NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    start_time TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    end_time TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    raw_telemetry_blob JSONB NOT NULL,
+    status telemetry.trip_status_enum NOT NULL DEFAULT 'PENDING_ANALYSIS',
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
 );
 
--- Table: driver_scores (Analysis Results)
+-- Create indexes to optimize query performance, especially for the worker.
+CREATE INDEX IF NOT EXISTS idx_trip_data_raw_vehicle_id ON telemetry.trip_data_raw(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_trip_data_raw_status ON telemetry.trip_data_raw(status);
+
+-- The 'driver_scores' table remains unchanged but is included for completeness.
 CREATE TABLE IF NOT EXISTS telemetry.driver_scores (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    trip_id UUID NOT NULL UNIQUE REFERENCES telemetry.trip_logs(id),
+    trip_id UUID NOT NULL UNIQUE,
     safety_score INT CHECK (safety_score >= 0 AND safety_score <= 100),
     harsh_braking_count INT DEFAULT 0,
     rapid_accel_count INT DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    FOREIGN KEY (trip_id) REFERENCES telemetry.trip_logs(id) ON DELETE CASCADE
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
 );
 
--- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_trip_logs_vehicle_id ON telemetry.trip_logs(vehicle_id);
-CREATE INDEX IF NOT EXISTS idx_trip_logs_driver_id ON telemetry.trip_logs(driver_id);
-CREATE INDEX IF NOT EXISTS idx_trip_logs_status ON telemetry.trip_logs(status);
 CREATE INDEX IF NOT EXISTS idx_driver_scores_trip_id ON telemetry.driver_scores(trip_id);

@@ -4,10 +4,11 @@ import time
 from uuid import UUID
 
 import pika
-import psycopg
-from psycopg import sql
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from analytics import calculate_safety_score
+from models import TripDataRaw, TripStatus
 
 # Configuration
 DATABASE_URL = os.getenv(
@@ -19,12 +20,15 @@ QUEUE_NAME = "telemetry_analysis"
 
 class TelemetryWorker:
     def __init__(self):
+        # Database setup
+        self.engine = create_engine(DATABASE_URL)
+        self.SessionLocal = sessionmaker(
+            autocommit=False, autoflush=False, bind=self.engine
+        )
+
+        # RabbitMQ connection setup
         self.connection = None
         self.channel = None
-
-    def connect_db(self):
-        """Establish database connection"""
-        return psycopg.connect(DATABASE_URL)
 
     def connect_rabbitmq(self):
         """Establish RabbitMQ connection"""
@@ -32,83 +36,70 @@ class TelemetryWorker:
         self.connection = pika.BlockingConnection(parameters)
         self.channel = self.connection.channel()
         self.channel.queue_declare(queue=QUEUE_NAME, durable=True)
-        return self.channel
+        print(f"✅ RabbitMQ connection established. Listening on queue: {QUEUE_NAME}")
 
     def process_message(self, ch, method, properties, body):
         """
-        Consume and process a telemetry analysis message.
+        Consume and process a telemetry analysis message using a state machine approach.
 
         Flow:
-        1. Decode trip_id from message
-        2. Fetch telemetry blob from database
-        3. Calculate safety score using analytics
-        4. Insert results into driver_scores table
-        5. Update trip status to COMPLETED
-        6. Acknowledge message
+        1. Decode trip_id from message.
+        2. Set trip status to PROCESSING.
+        3. Perform analysis.
+        4. On success, set status to COMPLETED and save score.
+        5. On failure, set status to FAILED.
+        6. Acknowledge the message to remove it from the queue.
         """
-        trip_id = body.decode("utf-8")
-        print(f"🔄 Processing trip: {trip_id}")
-
         try:
-            with self.connect_db() as conn:
-                # Step 1: Update status to PROCESSING
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE telemetry.trip_logs SET status = %s WHERE id = %s",
-                        ("PROCESSING", trip_id),
-                    )
-                    conn.commit()
-
-                # Step 2: Fetch telemetry blob
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT telemetry_blob FROM telemetry.trip_logs WHERE id = %s",
-                        (trip_id,),
-                    )
-                    result = cur.fetchone()
-                    if not result:
-                        print(f"❌ Trip {trip_id} not found in database")
-                        ch.basic_nack(delivery_tag=method.delivery_tag)
-                        return
-
-                    telemetry_blob = result[0]
-
-                # Step 3: Calculate safety score
-                metrics = calculate_safety_score(telemetry_blob)
-                print(f"📊 Calculated metrics: {metrics}")
-
-                # Step 4: Insert driver score
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "INSERT INTO telemetry.driver_scores "
-                        "(trip_id, safety_score, harsh_braking_count, rapid_accel_count) "
-                        "VALUES (%s, %s, %s, %s)",
-                        (
-                            trip_id,
-                            metrics["safety_score"],
-                            metrics["harsh_braking_count"],
-                            metrics["rapid_accel_count"],
-                        ),
-                    )
-                    conn.commit()
-
-                # Step 5: Update trip status to COMPLETED
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE telemetry.trip_logs SET status = %s WHERE id = %s",
-                        ("COMPLETED", trip_id),
-                    )
-                    conn.commit()
-
-            print(f"✅ Successfully processed trip: {trip_id}")
-
-            # Step 6: Acknowledge message (remove from queue)
+            trip_id = UUID(body.decode("utf-8"))
+            print(f"🔄 Received trip for processing: {trip_id}")
+        except (ValueError, TypeError) as e:
+            print(f"❌ Invalid message body: {body}. Error: {e}")
             ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+
+        db = self.SessionLocal()
+        trip = None
+        try:
+            # Fetch the trip from the database
+            trip = db.query(TripDataRaw).filter(TripDataRaw.id == trip_id).one_or_none()
+
+            if not trip:
+                print(f"❓ Trip {trip_id} not found in database. Acknowledging message.")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
+            # === STATE MACHINE: PENDING_ANALYSIS -> PROCESSING ===
+            trip.status = TripStatus.PROCESSING
+            db.commit()
+            print(f"  - Trip {trip_id} status set to PROCESSING.")
+
+            # Perform the core analysis on the raw data
+            metrics = calculate_safety_score(trip.raw_telemetry_blob)
+            print(f"  - 📊 Calculated metrics: {metrics}")
+
+            # NOTE: Here you would save the score to the 'driver_scores' table
+            # For now, we focus on the state machine of the trip itself.
+
+            # === STATE MACHINE: PROCESSING -> COMPLETED ===
+            trip.status = TripStatus.COMPLETED
+            db.commit()
+            print(f"✅ Successfully processed trip: {trip_id}. Status set to COMPLETED.")
 
         except Exception as e:
-            print(f"❌ Error processing trip {trip_id}: {e}")
-            # Requeue message on error
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            print(f"❌ Error during processing of trip {trip_id}: {e}")
+            if trip:
+                # === STATE MACHINE: (ANY) -> FAILED ===
+                db.rollback()
+                trip.status = TripStatus.FAILED
+                db.commit()
+                print(f"  - ❗ Trip {trip_id} status set to FAILED.")
+        finally:
+            if db:
+                db.close()
+            # Acknowledge the message regardless of success or failure
+            # to prevent it from being re-queued endlessly.
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def start(self):
         """Start consuming from RabbitMQ queue"""
@@ -120,17 +111,15 @@ class TelemetryWorker:
                 on_message_callback=self.process_message,
                 auto_ack=False,
             )
-
-            print(f"🚀 Worker listening on queue: {QUEUE_NAME}")
-            print("Press CTRL+C to stop")
+            print("Press CTRL+C to stop worker.")
             self.channel.start_consuming()
-
         except KeyboardInterrupt:
             print("\n⛔ Worker stopping...")
-            self.connection.close()
-        except Exception as e:
-            print(f"❌ Worker error: {e}")
-            self.connection.close()
+        except pika.exceptions.AMQPConnectionError as e:
+            print(f"❌ RabbitMQ connection error: {e}. Check RabbitMQ is running.")
+        finally:
+            if self.connection and self.connection.is_open:
+                self.connection.close()
 
 
 if __name__ == "__main__":

@@ -1,16 +1,16 @@
 import os
-import asyncio
 import json
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.concurrency import run_in_threadpool
+from sqlalchemy.orm import Session
 import pika
-import psycopg
-from psycopg import AsyncConnection, sql
 
-from models import TripPayload, TripIngestResponse
+from models import TripPayload, TripIngestResponse, TripDataRaw, TripStatus, Base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 # Configuration
 DATABASE_URL = os.getenv(
@@ -19,149 +19,125 @@ DATABASE_URL = os.getenv(
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 QUEUE_NAME = "telemetry_analysis"
 
-# Global connection pool
-db_pool = None
+# SQLAlchemy setup
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# RabbitMQ connection
 rabbitmq_connection = None
 rabbitmq_channel = None
 
 
-async def init_db():
-    """Initialize database connection pool"""
-    global db_pool
-    db_pool = await psycopg.AsyncConnection.connect(DATABASE_URL)
-
-
-def init_rabbitmq():
-    """Initialize RabbitMQ connection and declare queue"""
-    global rabbitmq_connection, rabbitmq_channel
-    parameters = pika.URLParameters(RABBITMQ_URL)
-    rabbitmq_connection = pika.BlockingConnection(parameters)
-    rabbitmq_channel = rabbitmq_connection.channel()
-    rabbitmq_channel.queue_declare(queue=QUEUE_NAME, durable=True)
-
-
-async def publish_to_queue(trip_id: str):
-    """Publish trip_id to RabbitMQ queue"""
+def get_db():
+    """FastAPI dependency to provide a DB session."""
+    db = SessionLocal()
     try:
+        yield db
+    finally:
+        db.close()
+
+
+def setup_rabbitmq():
+    """Initializes RabbitMQ connection and channel."""
+    global rabbitmq_connection, rabbitmq_channel
+    try:
+        parameters = pika.URLParameters(RABBITMQ_URL)
+        rabbitmq_connection = pika.BlockingConnection(parameters)
+        rabbitmq_channel = rabbitmq_connection.channel()
+        rabbitmq_channel.queue_declare(queue=QUEUE_NAME, durable=True)
+        print("✅ RabbitMQ connection established.")
+    except pika.exceptions.AMQPConnectionError as e:
+        print(f"❌ Could not connect to RabbitMQ: {e}")
+        # You might want to handle this more gracefully, e.g., by exiting
+        rabbitmq_connection = None
+        rabbitmq_channel = None
+
+
+def publish_to_queue(trip_id: str):
+    """Publishes trip_id to RabbitMQ queue in a blocking manner."""
+    if not rabbitmq_channel or not rabbitmq_channel.is_open:
+        print("🐰 RabbitMQ channel not available, attempting to reconnect...")
+        setup_rabbitmq()
+
+    if rabbitmq_channel:
         rabbitmq_channel.basic_publish(
             exchange="",
             routing_key=QUEUE_NAME,
             body=trip_id,
-            properties=pika.BasicProperties(delivery_mode=2),  # Persistent
+            properties=pika.BasicProperties(delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE),
         )
-    except Exception as e:
-        print(f"Error publishing to queue: {e}")
-        raise
-
-
-async def save_trip_log(payload: TripPayload) -> UUID:
-    """Save trip log to database and return trip_id"""
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO telemetry.trip_logs (vehicle_id, driver_id, timestamp, telemetry_blob, status) "
-                "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-                (
-                    payload.vehicle_id,
-                    payload.driver_id,
-                    payload.timestamp,
-                    json.dumps({"data": [p.model_dump() for p in payload.data]}),
-                    "PENDING",
-                ),
-            )
-            row = await cur.fetchone()
-            trip_id = row[0]
-            await conn.commit()
-
-    if isinstance(trip_id, str):
-        return UUID(trip_id)
-    return trip_id
+        print(f"📥 Published trip_id {trip_id} to queue '{QUEUE_NAME}'.")
+    else:
+        # This will be caught by the endpoint's error handling
+        raise ConnectionError("Failed to publish to RabbitMQ: channel not available.")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage app startup and shutdown"""
-    # Startup
-    await init_db()
-    init_rabbitmq()
-    print("✅ FastAPI service started (Producer mode)")
+    """Manage app startup and shutdown."""
+    print("🚀 FastAPI service starting up...")
+    Base.metadata.create_all(bind=engine)
+    setup_rabbitmq()
     yield
     # Shutdown
-    if db_pool:
-        await db_pool.close()
-    if rabbitmq_connection:
+    if rabbitmq_connection and rabbitmq_connection.is_open:
         rabbitmq_connection.close()
-    print("✅ FastAPI service shutdown")
+        print("🔌 RabbitMQ connection closed.")
+    print("🛑 FastAPI service shutting down.")
 
 
 app = FastAPI(
     title="FleetFlow Telemetry Ingestion API",
-    description="High-performance async API for vehicle telemetry ingestion",
+    description="API for vehicle telemetry ingestion using the Claim Check pattern.",
     lifespan=lifespan,
 )
 
 
 @app.post("/api/v1/telemetry", response_model=TripIngestResponse, status_code=202)
-async def ingest_telemetry(payload: TripPayload):
+async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
     """
-    Accept telemetry data using the Claim Check pattern.
-
-    1. Validates and stores the full telemetry blob in the database
-    2. Publishes the trip_id to RabbitMQ for async processing
-    3. Returns immediately with 202 ACCEPTED
+    Accepts telemetry data, stores it, and queues it for processing.
     """
     try:
-        # Step 1: Persist telemetry to database
-        trip_id = await save_trip_log(payload)
+        # Step 1: Create and persist the TripDataRaw entity
+        trip = TripDataRaw(
+            vehicle_id=payload.vehicle_id,
+            driver_id=payload.driver_id,
+            start_time=payload.timestamp, # Assuming timestamp is start_time
+            end_time=payload.timestamp, # Placeholder, could be updated later
+            raw_telemetry_blob={"data": [p.model_dump() for p in payload.data]},
+            status=TripStatus.PENDING_ANALYSIS,  # Initial state
+        )
+        db.add(trip)
+        db.commit()
+        db.refresh(trip)
 
-        # Step 2: Publish trip_id to queue for processing
-        await publish_to_queue(str(trip_id))
+        # Step 2: Publish the new trip's ID to the queue for the worker to process.
+        # Use run_in_threadpool to avoid blocking the event loop.
+        await run_in_threadpool(publish_to_queue, str(trip.id))
 
         return TripIngestResponse(
-            status="QUEUED",
-            trip_id=trip_id,
+            status="QUEUED_FOR_ANALYSIS",
+            trip_id=trip.id,
         )
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=f"Service unavailable: {e}")
     except Exception as e:
-        print(f"Error ingesting telemetry: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Rollback in case of other errors during publish etc.
+        db.rollback()
+        print(f"❌ Error during telemetry ingestion: {e}")
+        raise HTTPException(status_code=500, detail="Failed to ingest telemetry data.")
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint."""
     return {"status": "healthy"}
 
-
-@app.get("/api/v1/trip/{trip_id}/score")
-async def get_trip_score(trip_id: str):
-    """Retrieve driver score for a specific trip"""
-    try:
-        async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT trip_id, safety_score, harsh_braking_count, rapid_accel_count, created_at "
-                    "FROM telemetry.driver_scores WHERE trip_id = %s",
-                    (trip_id,),
-                )
-                row = await cur.fetchone()
-
-        if not row:
-            raise HTTPException(
-                status_code=404,
-                detail="Score not found. Processing may still be in progress.",
-            )
-
-        return {
-            "trip_id": str(row[0]),
-            "safety_score": row[1],
-            "harsh_braking_count": row[2],
-            "rapid_accel_count": row[3],
-            "created_at": (
-                row[4].isoformat() if hasattr(row[4], "isoformat") else row[4]
-            ),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error retrieving score: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/v1/trip/{trip_id}/status")
+async def get_trip_status(trip_id: UUID, db: Session = Depends(get_db)):
+    """Retrieve the current processing status of a trip."""
+    trip = db.query(TripDataRaw).filter(TripDataRaw.id == trip_id).one_or_none()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found.")
+    return {"trip_id": trip.id, "status": trip.status.value, "last_updated": trip.created_at}
