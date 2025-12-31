@@ -51,6 +51,7 @@ def calculate_safety_score(telemetry_blob: Dict[str, Any]) -> Dict[str, int]:
     harsh_braking = count_events(g_long, -0.4, "lt")
     rapid_accel = count_events(g_long, 0.4, "gt")
     harsh_cornering = count_events(g_lat, 0.3, "abs")
+    max_speed = float(max(p.get("speed_kmh", 0) for p in data))
 
     # Calculate score
     # 2 points penalty per event
@@ -62,4 +63,5 @@ def calculate_safety_score(telemetry_blob: Dict[str, Any]) -> Dict[str, int]:
         "harsh_braking_count": harsh_braking,
         "rapid_accel_count": rapid_accel,
         "harsh_cornering_count": harsh_cornering,
+        "max_speed": max_speed,
     }

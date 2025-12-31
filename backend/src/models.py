@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from datetime import datetime
 
 from sqlalchemy import (
+    Float,
     create_engine,
     Column,
     String,
@@ -75,6 +76,7 @@ class DriverScoreDB(Base):
     vehicle_id = Column(PG_UUID(as_uuid=True), nullable=False)
     driver_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
     safety_score = Column(Integer, nullable=False)
+    max_speed = Column(Float, default=0)
     harsh_braking_count = Column(Integer, default=0)
     rapid_accel_count = Column(Integer, default=0)
     harsh_cornering_count = Column(Integer, default=0)
@@ -116,6 +118,7 @@ class DriverScore(BaseModel):
     trip_id: UUID
     safety_score: int
     harsh_braking_count: int
+    max_speed: float
     rapid_accel_count: int
     harsh_cornering_count: int
     created_at: datetime
