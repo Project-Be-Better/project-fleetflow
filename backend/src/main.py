@@ -123,18 +123,21 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
 
             # Inject a few specific "harsh" events so the score isn't always 100
             # Harsh braking (negative)
-            braking_indices = np.random.choice(n_points, 5, replace=False)
-            accels[braking_indices] = np.random.uniform(-0.6, -0.45, 5)
+            n_braking = np.random.randint(1, 16)
+            braking_indices = np.random.choice(n_points, n_braking, replace=False)
+            accels[braking_indices] = np.random.uniform(-0.6, -0.45, n_braking)
 
             # Rapid acceleration (positive)
-            accel_indices = np.random.choice(n_points, 3, replace=False)
-            accels[accel_indices] = np.random.uniform(0.45, 0.6, 3)
+            n_accel = np.random.randint(1, 16)
+            accel_indices = np.random.choice(n_points, n_accel, replace=False)
+            accels[accel_indices] = np.random.uniform(0.45, 0.6, n_accel)
 
             # Harsh cornering (lateral)
-            corner_indices = np.random.choice(n_points, 4, replace=False)
+            n_corner = np.random.randint(1, 16)
+            corner_indices = np.random.choice(n_points, n_corner, replace=False)
             lat_forces[corner_indices] = np.random.choice(
-                [-0.4, 0.4], 4
-            ) * np.random.uniform(1.1, 1.3, 4)
+                [-0.4, 0.4], n_corner
+            ) * np.random.uniform(1.1, 1.3, n_corner)
 
             # Calculate speeds: speed = max(0, cumsum(accel * gravity_to_kmh))
             # We'll add a base speed and some smoothing to make it look like a real trip
