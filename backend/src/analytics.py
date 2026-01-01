@@ -93,7 +93,11 @@ def calculate_safety_score(telemetry_blob: Dict[str, Any]) -> Dict[str, int]:
         + calculate_penalty(speeding_idx)
     )
 
-    safety_score = max(0, 100 - total_penalty)
+    # --- Updated Scoring Logic ---
+    # We use a floor of 40 for the pilot to keep scores realistic.
+    # We also apply a 0.5 multiplier to the total penalty so that
+    # aggressive drivers land in the 40-60 range instead of hitting 0.
+    safety_score = max(40, 100 - int(total_penalty * 0.5))
 
     # Summary for return
     harsh_braking = len(braking_idx)
