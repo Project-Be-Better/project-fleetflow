@@ -108,7 +108,11 @@ app = FastAPI(
 # Enable CORS for the dashboard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -291,13 +295,21 @@ async def start_trip_simulation(payload: dict, db: Session = Depends(get_db)):
     """
     Simplified endpoint for the dashboard to trigger a synthetic trip.
     """
-    from uuid import uuid4
+    from uuid import uuid4, UUID
     from datetime import datetime
+
+    # Safely parse driver_id
+    driver_id_raw = payload.get("driver_id")
+    try:
+        # Try to parse as UUID, otherwise generate a new one for the simulation
+        driver_id = UUID(driver_id_raw) if driver_id_raw else uuid4()
+    except (ValueError, TypeError):
+        driver_id = uuid4()
 
     # Create a dummy payload for the ingestion logic
     sim_payload = TripPayload(
         vehicle_id=uuid4(),
-        driver_id=payload.get("driver_id", uuid4()),
+        driver_id=driver_id,
         timestamp=datetime.utcnow(),
         data=[],
     )

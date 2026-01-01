@@ -29,7 +29,7 @@ Base = declarative_base()
 class TripStatus(enum.Enum):
     """Enumeration for the status of a trip analysis."""
 
-    PENDING_ANALYSIS = "PENDING_ANALYSIS"
+    PENDING = "PENDING"
     PROCESSING = "PROCESSING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
@@ -52,10 +52,13 @@ class TripDataRaw(Base):
     status = Column(
         Enum(TripStatus, name="trip_status_enum", schema="telemetry"),
         nullable=False,
-        default=TripStatus.PENDING_ANALYSIS,
+        default=TripStatus.PENDING,
         index=True,
     )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
 
 
 class DriverScoreDB(Base):
@@ -81,7 +84,12 @@ class DriverScoreDB(Base):
     rapid_accel_count = Column(Integer, default=0)
     harsh_cornering_count = Column(Integer, default=0)
     speeding_count = Column(Integer, default=0)
+    avg_speed = Column(Float, default=0)
+    total_distance = Column(Float, default=0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
 
 
 # ============================================

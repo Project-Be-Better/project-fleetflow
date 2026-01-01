@@ -76,7 +76,7 @@ class TelemetryWorker:
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            # === STATE MACHINE: PENDING_ANALYSIS -> PROCESSING ===
+            # === STATE MACHINE: PENDING -> PROCESSING ===
             state_mgr.transition_to(trip_id, TripStatus.PROCESSING)
 
             # Perform the core analysis on the raw data
@@ -94,6 +94,8 @@ class TelemetryWorker:
                 harsh_cornering_count=metrics.get("harsh_cornering_count", 0),
                 speeding_count=metrics.get("speeding_count", 0),
                 max_speed=metrics["max_speed"],
+                avg_speed=metrics.get("avg_speed", 0),
+                total_distance=metrics.get("total_distance", 0),
             )
             db.add(score_entry)
 

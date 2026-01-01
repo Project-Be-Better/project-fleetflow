@@ -43,7 +43,7 @@ class TripStateManager:
         self, vehicle_id: UUID, driver_id: UUID, start_time: datetime, raw_data: dict
     ) -> TripDataRaw:
         """
-        Creates a new trip in PENDING_ANALYSIS state.
+        Creates a new trip in PENDING state.
         """
         trip = TripDataRaw(
             vehicle_id=vehicle_id,
@@ -51,10 +51,10 @@ class TripStateManager:
             start_time=start_time,
             end_time=start_time,  # Will be updated later
             raw_telemetry_blob=raw_data,
-            status=TripStatus.PENDING_ANALYSIS,
+            status=TripStatus.PENDING,
         )
         self.db.add(trip)
         self.db.commit()
         self.db.refresh(trip)
-        print(f"🆕 Trip Initialized: {trip.id} (PENDING_ANALYSIS)")
+        print(f"🆕 Trip Initialized: {trip.id} (PENDING)")
         return trip
