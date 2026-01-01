@@ -96,6 +96,8 @@ class TelemetryWorker:
                 max_speed=metrics["max_speed"],
                 avg_speed=metrics.get("avg_speed", 0),
                 total_distance=metrics.get("total_distance", 0),
+                total_duration_hrs=metrics.get("total_duration_hrs", 0),
+                utilization_pct=metrics.get("utilization_pct", 0),
             )
             db.add(score_entry)
 

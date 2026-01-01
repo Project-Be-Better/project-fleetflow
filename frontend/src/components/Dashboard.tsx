@@ -168,58 +168,93 @@ export const Dashboard: React.FC = () => {
       )}
 
       {result && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Safety Score</CardTitle>
-              <ShieldCheck className="text-muted-foreground h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{result.safety_score.toFixed(1)}</div>
-              <p className="text-muted-foreground text-xs">
-                Risk Level:{' '}
-                <span
-                  className={`font-bold ${result.risk_level === 'Low' ? 'text-green-500' : result.risk_level === 'Medium' ? 'text-yellow-500' : 'text-red-500'}`}
-                >
-                  {result.risk_level}
-                </span>
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Speeding Events</CardTitle>
-              <Activity className="text-muted-foreground h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{result.speeding_count}</div>
-              <p className="text-muted-foreground text-xs">
-                Total distance: {result.total_distance.toFixed(2)} km
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Harsh Braking</CardTitle>
-              <AlertCircle className="text-muted-foreground h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{result.harsh_braking_count}</div>
-              <p className="text-muted-foreground text-xs">
-                Avg Speed: {result.avg_speed.toFixed(1)} km/h
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Harsh Accel</CardTitle>
-              <Activity className="text-muted-foreground h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{result.harsh_acceleration_count}</div>
-              <p className="text-muted-foreground text-xs">Driver: {result.driver_id}</p>
-            </CardContent>
-          </Card>
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Safety Score</CardTitle>
+                <ShieldCheck className="text-muted-foreground h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{result.safety_score.toFixed(1)}</div>
+                <p className="text-muted-foreground text-xs">
+                  Risk Level:{' '}
+                  <span
+                    className={`font-bold ${result.risk_level === 'Low' ? 'text-green-500' : result.risk_level === 'Medium' ? 'text-yellow-500' : 'text-red-500'}`}
+                  >
+                    {result.risk_level}
+                  </span>
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Utilization</CardTitle>
+                <Activity className="text-muted-foreground h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{result.utilization_pct.toFixed(1)}%</div>
+                <p className="text-muted-foreground text-xs">
+                  Of 48h rental period
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Distance</CardTitle>
+                <MapPin className="text-muted-foreground h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{result.total_distance.toFixed(1)} km</div>
+                <p className="text-muted-foreground text-xs">
+                  Avg: {result.avg_speed.toFixed(1)} km/h
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Driving Time</CardTitle>
+                <Loader2 className="text-muted-foreground h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{result.total_duration_hrs.toFixed(1)} hrs</div>
+                <p className="text-muted-foreground text-xs">Active engine time</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Speeding Events</CardTitle>
+                <Activity className="text-muted-foreground h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{result.speeding_count}</div>
+                <p className="text-muted-foreground text-xs">Events > 80km/h</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Harsh Braking</CardTitle>
+                <AlertCircle className="text-muted-foreground h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{result.harsh_braking_count}</div>
+                <p className="text-muted-foreground text-xs">Decel > 0.4g</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Harsh Accel</CardTitle>
+                <Activity className="text-muted-foreground h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{result.harsh_acceleration_count}</div>
+                <p className="text-muted-foreground text-xs">Accel > 0.4g</p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
     </div>

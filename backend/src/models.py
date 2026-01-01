@@ -86,6 +86,8 @@ class DriverScoreDB(Base):
     speeding_count = Column(Integer, default=0)
     avg_speed = Column(Float, default=0)
     total_distance = Column(Float, default=0)
+    total_duration_hrs = Column(Float, default=0)
+    utilization_pct = Column(Float, default=0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -104,6 +106,7 @@ class TelemetryPoint(BaseModel):
     latitude: float
     longitude: float
     speed_kmh: float
+    odometer_km: float
     g_force_long: float  # Longitudinal (0.4g = ~4 m/s²)
     g_force_lat: float  # Lateral
     weather: str = "clear"
@@ -133,5 +136,12 @@ class DriverScore(BaseModel):
     harsh_braking_count: int
     max_speed: float
     rapid_accel_count: int
+    harsh_cornering_count: int
+    speeding_count: int
+    avg_speed: float
+    total_distance: float
+    total_duration_hrs: float
+    utilization_pct: float
+    created_at: datetime
     harsh_cornering_count: int
     created_at: datetime

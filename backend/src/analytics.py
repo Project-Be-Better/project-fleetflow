@@ -102,6 +102,35 @@ def calculate_safety_score(telemetry_blob: Dict[str, Any]) -> Dict[str, int]:
     speeding_events = len(speeding_idx)
     max_speed = float(np.max(speeds))
 
+    # --- NEW: Odometer & Utilization Metrics ---
+    # Total Distance from Odometer
+    first_odo = data[0].get("odometer_km", 0)
+    last_odo = data[-1].get("odometer_km", 0)
+    total_distance = float(max(0, last_odo - first_odo))
+
+    # Total Driving Duration (Active Time)
+    # We calculate the time difference between consecutive points.
+    # If the gap is > 5 minutes, we assume the car was parked.
+    total_driving_seconds = 0
+    for i in range(1, len(data)):
+        try:
+            ts1 = datetime.fromisoformat(data[i - 1].get("timestamp"))
+            ts2 = datetime.fromisoformat(data[i].get("timestamp"))
+            delta = (ts2 - ts1).total_seconds()
+            if delta < 300:  # 5 minutes threshold for "active"
+                total_driving_seconds += delta
+        except:
+            continue
+
+    total_duration_hrs = float(total_driving_seconds / 3600.0)
+    avg_speed = float(
+        total_distance / total_duration_hrs if total_duration_hrs > 0 else 0
+    )
+
+    # Utilization (assuming 48h rental as per pilot requirements)
+    rental_duration_hrs = 48.0
+    utilization_pct = float(min(100, (total_duration_hrs / rental_duration_hrs) * 100))
+
     return {
         "safety_score": safety_score,
         "harsh_braking_count": harsh_braking,
@@ -109,5 +138,9 @@ def calculate_safety_score(telemetry_blob: Dict[str, Any]) -> Dict[str, int]:
         "harsh_cornering_count": harsh_cornering,
         "speeding_count": speeding_events,
         "max_speed": max_speed,
+        "total_distance": total_distance,
+        "avg_speed": avg_speed,
+        "total_duration_hrs": total_duration_hrs,
+        "utilization_pct": utilization_pct,
         "weather_summary": f"Started {data[0].get('weather')}, ended {data[-1].get('weather')}",
     }

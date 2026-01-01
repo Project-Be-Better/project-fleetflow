@@ -148,12 +148,14 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
         # Synthetic Data Generation for Testing
         if not telemetry_data:
             print(
-                "🧪 Empty payload detected. Generating 5,000 synthetic points using NumPy..."
+                "🧪 Empty payload detected. Generating 5,000 synthetic points across 48h rental..."
             )
             n_points = 5000
+            n_segments = 5
+            points_per_segment = n_points // n_segments
+            rental_duration_hrs = 48
 
-            # --- NEW: Driver Profiles for Score Variety ---
-            # 50% Safe, 30% Moderate, 20% Aggressive
+            # Driver Profile
             profile = np.random.choice(
                 ["safe", "moderate", "aggressive"], p=[0.5, 0.3, 0.2]
             )
@@ -171,92 +173,74 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
                 speed_base = 85
                 accel_noise = 0.1
 
-            # Use a normal distribution for realistic "smooth" driving
-            accels = np.random.normal(0, accel_noise, n_points)
-            lat_forces = np.random.normal(0, 0.02, n_points)
+            # Start time is 48 hours ago
+            start_ts = payload.timestamp - timedelta(hours=rental_duration_hrs)
+            current_odo = float(np.random.randint(10000, 50000))
 
-            # Inject "harsh" events based on profile
-            n_braking = np.random.randint(*n_range)
-            braking_indices = np.random.choice(n_points, n_braking, replace=False)
-            accels[braking_indices] = np.random.uniform(-0.6, -0.45, n_braking)
+            # GPS Base (Singapore)
+            base_lat, base_lon = 1.3521, 103.8198
 
-            n_accel = np.random.randint(*n_range)
-            accel_indices = np.random.choice(n_points, n_accel, replace=False)
-            accels[accel_indices] = np.random.uniform(0.45, 0.6, n_accel)
+            telemetry_data = []
 
-            n_corner = np.random.randint(*n_range)
-            corner_indices = np.random.choice(n_points, n_corner, replace=False)
-            lat_forces[corner_indices] = np.random.choice(
-                [-0.4, 0.4], n_corner
-            ) * np.random.uniform(1.1, 1.3, n_corner)
+            for seg in range(n_segments):
+                # Each segment starts at a random time within its 9.6h window
+                window_offset = (rental_duration_hrs / n_segments) * seg
+                seg_start_time = (
+                    start_ts
+                    + timedelta(hours=window_offset)
+                    + timedelta(minutes=np.random.randint(0, 240))
+                )
 
-            # Calculate speeds: speed = max(0, cumsum(accel * gravity_to_kmh))
-            # We'll add a base speed and some smoothing to make it look like a real trip
-            speeds = np.maximum(
-                0, speed_base + np.cumsum(accels * 9.81 * 3.6 * 0.1)
-            )  # Reduced multiplier for stability
-            # Clip speed to realistic highway limits
-            speeds = np.clip(speeds, 0, 120)
+                # Generate segment data
+                seg_accels = np.random.normal(0, accel_noise, points_per_segment)
+                seg_lat_forces = np.random.normal(0, 0.02, points_per_segment)
+
+                # Inject "harsh" events per segment
+                n_events = np.random.randint(*n_range)
+                for _ in range(n_events):
+                    idx = np.random.randint(0, points_per_segment)
+                    seg_accels[idx] = np.random.uniform(-0.6, -0.45)  # Braking
+
+                    idx = np.random.randint(0, points_per_segment)
+                    seg_accels[idx] = np.random.uniform(0.45, 0.6)  # Accel
+
+                    idx = np.random.randint(0, points_per_segment)
+                    seg_lat_forces[idx] = np.random.choice(
+                        [-0.4, 0.4]
+                    ) * np.random.uniform(1.1, 1.3)
+
+                seg_speeds = np.maximum(
+                    0, speed_base + np.cumsum(seg_accels * 9.81 * 3.6 * 0.1)
+                )
+                seg_speeds = np.clip(seg_speeds, 0, 120)
+
+                for i in range(points_per_segment):
+                    ts = seg_start_time + timedelta(seconds=i)
+
+                    # Update Odometer: speed (km/h) * time (1s = 1/3600 h)
+                    dist_km = seg_speeds[i] / 3600.0
+                    current_odo += dist_km
+
+                    # GPS movement
+                    base_lat += np.random.normal(0, 0.0001)
+                    base_lon += np.random.normal(0, 0.0001)
+
+                    telemetry_data.append(
+                        {
+                            "timestamp": ts.isoformat(),
+                            "latitude": float(round(base_lat, 6)),
+                            "longitude": float(round(base_lon, 6)),
+                            "speed_kmh": float(round(seg_speeds[i], 2)),
+                            "odometer_km": float(round(current_odo, 3)),
+                            "g_force_long": float(round(seg_accels[i], 3)),
+                            "g_force_lat": float(round(seg_lat_forces[i], 3)),
+                            "weather": "clear",  # Simplified for pilot
+                        }
+                    )
 
             print(
-                f"  - Generated {profile} trip with {n_braking} braking, {n_accel} accel, {n_corner} cornering events."
+                f"  - Generated {profile} trip across {n_segments} segments. Final Odo: {current_odo:.2f} km"
             )
-
-            # --- NEW: Contextual Data Generation ---
-            # 1. Timestamps (1 second intervals)
-            start_ts = payload.timestamp
-            # 30% chance to make it a night trip for testing
-            if np.random.random() < 0.3:
-                # Set to a random hour between 20:00 and 04:00
-                night_hour = np.random.choice([20, 21, 22, 23, 0, 1, 2, 3, 4])
-                start_ts = start_ts.replace(
-                    hour=night_hour, minute=np.random.randint(0, 60)
-                )
-
-            timestamps = [start_ts + timedelta(seconds=i) for i in range(n_points)]
-
-            # 2. GPS Coordinates (Singapore Bounding Box)
-            # Start at a random point in SG
-            base_lat, base_lon = 1.3521, 103.8198  # Central SG
-            lats = base_lat + np.cumsum(np.random.normal(0, 0.0001, n_points))
-            lons = base_lon + np.cumsum(np.random.normal(0, 0.0001, n_points))
-
-            # 3. Dynamic Weather (Transitions)
-            # Start with one condition, potentially transition halfway
-            weather_options = ["clear", "rainy", "cloudy"]
-            start_weather = np.random.choice(weather_options, p=[0.7, 0.2, 0.1])
-
-            # Create an array of weather conditions
-            weather_conditions = [start_weather] * n_points
-            if np.random.random() < 0.3:  # 30% chance of weather change during trip
-                change_point = np.random.randint(n_points // 4, 3 * n_points // 4)
-                new_weather = np.random.choice(
-                    [w for w in weather_options if w != start_weather]
-                )
-                for i in range(change_point, n_points):
-                    weather_conditions[i] = new_weather
-
-            # Convert to list of dicts for JSON serialization
-            telemetry_data = [
-                {
-                    "timestamp": ts.isoformat(),
-                    "latitude": float(round(lat, 6)),
-                    "longitude": float(round(lon, 6)),
-                    "speed_kmh": float(round(s, 2)),
-                    "g_force_long": float(round(a, 3)),
-                    "g_force_lat": float(round(l, 3)),
-                    "weather": w,
-                }
-                for ts, lat, lon, s, a, l, w in zip(
-                    timestamps,
-                    lats,
-                    lons,
-                    speeds,
-                    accels,
-                    lat_forces,
-                    weather_conditions,
-                )
-            ]
 
         # Step 1: Create and persist the TripDataRaw entity using StateManager
         state_mgr = TripStateManager(db)
@@ -356,6 +340,8 @@ async def get_trip_result(trip_id: UUID, db: Session = Depends(get_db)):
         "max_speed": score.max_speed,
         "avg_speed": score.avg_speed,
         "total_distance": score.total_distance,
+        "total_duration_hrs": score.total_duration_hrs,
+        "utilization_pct": score.utilization_pct,
         "harsh_braking_count": score.harsh_braking_count,
         "harsh_acceleration_count": score.rapid_accel_count,
         "harsh_cornering_count": score.harsh_cornering_count,
