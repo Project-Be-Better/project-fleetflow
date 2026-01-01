@@ -148,12 +148,12 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
         # Synthetic Data Generation for Testing
         if not telemetry_data:
             print(
-                "🧪 Empty payload detected. Generating 5,000 synthetic points across 48h rental..."
+                "🧪 Empty payload detected. Generating synthetic points across 48h rental..."
             )
-            n_points = 5000
-            n_segments = 5
-            points_per_segment = n_points // n_segments
             rental_duration_hrs = 48
+            n_segments = np.random.randint(4, 8)  # 4 to 7 segments
+            total_points_target = 5000
+            points_per_segment = total_points_target // n_segments
 
             # Driver Profile
             profile = np.random.choice(
@@ -183,28 +183,31 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
             telemetry_data = []
 
             for seg in range(n_segments):
-                # Each segment starts at a random time within its 9.6h window
+                # Each segment starts at a random time within its window
                 window_offset = (rental_duration_hrs / n_segments) * seg
                 seg_start_time = (
                     start_ts
                     + timedelta(hours=window_offset)
-                    + timedelta(minutes=np.random.randint(0, 240))
+                    + timedelta(minutes=np.random.randint(0, 60))
                 )
 
+                # Randomize points in this segment slightly
+                seg_points = points_per_segment + np.random.randint(-100, 101)
+
                 # Generate segment data
-                seg_accels = np.random.normal(0, accel_noise, points_per_segment)
-                seg_lat_forces = np.random.normal(0, 0.02, points_per_segment)
+                seg_accels = np.random.normal(0, accel_noise, seg_points)
+                seg_lat_forces = np.random.normal(0, 0.02, seg_points)
 
                 # Inject "harsh" events per segment
                 n_events = np.random.randint(*n_range)
                 for _ in range(n_events):
-                    idx = np.random.randint(0, points_per_segment)
+                    idx = np.random.randint(0, seg_points)
                     seg_accels[idx] = np.random.uniform(-0.6, -0.45)  # Braking
 
-                    idx = np.random.randint(0, points_per_segment)
+                    idx = np.random.randint(0, seg_points)
                     seg_accels[idx] = np.random.uniform(0.45, 0.6)  # Accel
 
-                    idx = np.random.randint(0, points_per_segment)
+                    idx = np.random.randint(0, seg_points)
                     seg_lat_forces[idx] = np.random.choice(
                         [-0.4, 0.4]
                     ) * np.random.uniform(1.1, 1.3)
@@ -214,12 +217,14 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
                 )
                 seg_speeds = np.clip(seg_speeds, 0, 120)
 
-                for i in range(points_per_segment):
-                    # 5-second interval to make 5000 points cover ~7 hours
-                    ts = seg_start_time + timedelta(seconds=i * 5)
+                seg_current_ts = seg_start_time
+                for i in range(seg_points):
+                    # Random interval between 4 and 6 seconds
+                    interval = np.random.uniform(4.0, 6.0)
+                    seg_current_ts += timedelta(seconds=interval)
 
-                    # Update Odometer: speed (km/h) * time (5s = 5/3600 h)
-                    dist_km = (seg_speeds[i] / 3600.0) * 5
+                    # Update Odometer: speed (km/h) * time (interval/3600 h)
+                    dist_km = (seg_speeds[i] / 3600.0) * interval
                     current_odo += dist_km
 
                     # GPS movement
@@ -228,7 +233,7 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
 
                     telemetry_data.append(
                         {
-                            "timestamp": ts.isoformat(),
+                            "timestamp": seg_current_ts.isoformat(),
                             "latitude": float(round(base_lat, 6)),
                             "longitude": float(round(base_lon, 6)),
                             "speed_kmh": float(round(seg_speeds[i], 2)),
