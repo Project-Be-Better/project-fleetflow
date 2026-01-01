@@ -286,6 +286,24 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@app.post("/api/v1/trip", response_model=TripIngestResponse, status_code=202)
+async def start_trip_simulation(payload: dict, db: Session = Depends(get_db)):
+    """
+    Simplified endpoint for the dashboard to trigger a synthetic trip.
+    """
+    from uuid import uuid4
+    from datetime import datetime
+
+    # Create a dummy payload for the ingestion logic
+    sim_payload = TripPayload(
+        vehicle_id=uuid4(),
+        driver_id=payload.get("driver_id", uuid4()),
+        timestamp=datetime.utcnow(),
+        data=[],
+    )
+    return await ingest_telemetry(sim_payload, db)
+
+
 @app.get("/api/v1/trip/{trip_id}/status")
 async def get_trip_status(trip_id: UUID, db: Session = Depends(get_db)):
     """Retrieve the current processing status of a trip."""
@@ -295,12 +313,13 @@ async def get_trip_status(trip_id: UUID, db: Session = Depends(get_db)):
     return {
         "trip_id": trip.id,
         "status": trip.status.value,
-        "last_updated": trip.created_at,
+        "created_at": trip.created_at,
+        "updated_at": trip.updated_at,
     }
 
 
-@app.get("/api/v1/trip/{trip_id}/results")
-async def get_trip_results(trip_id: UUID, db: Session = Depends(get_db)):
+@app.get("/api/v1/trip/{trip_id}/result")
+async def get_trip_result(trip_id: UUID, db: Session = Depends(get_db)):
     """Retrieve the analysis results for a completed trip."""
     from models import DriverScoreDB
 
@@ -320,11 +339,19 @@ async def get_trip_results(trip_id: UUID, db: Session = Depends(get_db)):
 
     return {
         "trip_id": score.trip_id,
+        "driver_id": str(score.driver_id),
         "safety_score": score.safety_score,
         "max_speed": score.max_speed,
+        "avg_speed": score.avg_speed,
+        "total_distance": score.total_distance,
         "harsh_braking_count": score.harsh_braking_count,
-        "rapid_accel_count": score.rapid_accel_count,
+        "harsh_acceleration_count": score.rapid_accel_count,
         "harsh_cornering_count": score.harsh_cornering_count,
         "speeding_count": score.speeding_count,
+        "risk_level": (
+            "Low"
+            if score.safety_score > 80
+            else "Medium" if score.safety_score > 60 else "High"
+        ),
         "created_at": score.created_at,
     }

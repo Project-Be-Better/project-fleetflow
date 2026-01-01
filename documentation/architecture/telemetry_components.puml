@@ -1,4 +1,4 @@
-@startuml
+@startuml telemetry_components
 !theme mars
 
 package "FleetFlow Cluster" {

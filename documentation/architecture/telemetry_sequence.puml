@@ -1,4 +1,4 @@
-@startuml
+@startuml telemetry_sequence
 !theme mars
 autonumber
 

@@ -43,7 +43,7 @@ export const Dashboard: React.FC = () => {
   }
 
   useEffect(() => {
-    let interval: any
+    let interval: ReturnType<typeof setInterval> | undefined
 
     if (activeTripId && (!status || status.status !== 'COMPLETED')) {
       interval = setInterval(async () => {

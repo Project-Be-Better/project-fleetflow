@@ -1,4 +1,4 @@
-@startuml
+@startuml trip_state_machine
 title Trip Processing State Machine
 
 [*] --> PENDING_ANALYSIS : Trip Created
