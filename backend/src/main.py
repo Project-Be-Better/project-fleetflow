@@ -215,10 +215,11 @@ async def ingest_telemetry(payload: TripPayload, db: Session = Depends(get_db)):
                 seg_speeds = np.clip(seg_speeds, 0, 120)
 
                 for i in range(points_per_segment):
-                    ts = seg_start_time + timedelta(seconds=i)
+                    # 5-second interval to make 5000 points cover ~7 hours
+                    ts = seg_start_time + timedelta(seconds=i * 5)
 
-                    # Update Odometer: speed (km/h) * time (1s = 1/3600 h)
-                    dist_km = seg_speeds[i] / 3600.0
+                    # Update Odometer: speed (km/h) * time (5s = 5/3600 h)
+                    dist_km = (seg_speeds[i] / 3600.0) * 5
                     current_odo += dist_km
 
                     # GPS movement

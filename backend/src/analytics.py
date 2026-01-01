@@ -114,12 +114,16 @@ def calculate_safety_score(telemetry_blob: Dict[str, Any]) -> Dict[str, int]:
     total_driving_seconds = 0
     for i in range(1, len(data)):
         try:
-            ts1 = datetime.fromisoformat(data[i - 1].get("timestamp"))
-            ts2 = datetime.fromisoformat(data[i].get("timestamp"))
+            ts1 = datetime.fromisoformat(
+                data[i - 1].get("timestamp").replace("Z", "+00:00")
+            )
+            ts2 = datetime.fromisoformat(
+                data[i].get("timestamp").replace("Z", "+00:00")
+            )
             delta = (ts2 - ts1).total_seconds()
-            if delta < 300:  # 5 minutes threshold for "active"
+            if 0 < delta < 300:  # 5 minutes threshold for "active"
                 total_driving_seconds += delta
-        except:
+        except Exception as e:
             continue
 
     total_duration_hrs = float(total_driving_seconds / 3600.0)
@@ -127,8 +131,20 @@ def calculate_safety_score(telemetry_blob: Dict[str, Any]) -> Dict[str, int]:
         total_distance / total_duration_hrs if total_duration_hrs > 0 else 0
     )
 
-    # Utilization (assuming 48h rental as per pilot requirements)
-    rental_duration_hrs = 48.0
+    # Calculate actual rental span from data
+    try:
+        first_ts = datetime.fromisoformat(
+            data[0].get("timestamp").replace("Z", "+00:00")
+        )
+        last_ts = datetime.fromisoformat(
+            data[-1].get("timestamp").replace("Z", "+00:00")
+        )
+        actual_span_hrs = (last_ts - first_ts).total_seconds() / 3600.0
+    except:
+        actual_span_hrs = 48.0
+
+    # Utilization (use the larger of 48h or actual span to be safe)
+    rental_duration_hrs = max(48.0, actual_span_hrs)
     utilization_pct = float(min(100, (total_duration_hrs / rental_duration_hrs) * 100))
 
     return {
